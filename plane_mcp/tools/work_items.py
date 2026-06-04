@@ -23,6 +23,18 @@ from plane_mcp.tools.pql_reference import PQL_FIELD_HINT, PQL_FULL_REFERENCE
 logger = get_logger(__name__)
 
 
+def _remap_work_item_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Remap SDK field names to Plane v1 API field names.
+
+    The SDK uses 'labels'/'assignees' but the v1 API expects 'label_ids'/'assignee_ids'.
+    """
+    if "labels" in data:
+        data["label_ids"] = data.pop("labels")
+    if "assignees" in data:
+        data["assignee_ids"] = data.pop("assignees")
+    return data
+
+
 def register_work_item_tools(mcp: FastMCP) -> None:
     """Register all work item-related tools with the MCP server."""
 
@@ -249,7 +261,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             type=type,
         )
 
-        return client.work_items.create(workspace_slug=workspace_slug, project_id=project_id, data=data)
+        payload = _remap_work_item_fields(data.model_dump(exclude_none=True))
+        response = client.work_items._post(
+            f"{workspace_slug}/projects/{project_id}/work-items",
+            payload,
+        )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def retrieve_work_item(
@@ -431,12 +448,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             type=type,
         )
 
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=data,
+        payload = _remap_work_item_fields(data.model_dump(exclude_none=True))
+        response = client.work_items._patch(
+            f"{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            payload,
         )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def delete_work_item(project_id: str, work_item_id: str) -> None:
@@ -473,12 +490,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         current_ids = [u.id for u in (current.assignees or []) if u.id]
         if user_id not in current_ids:
             current_ids.append(user_id)
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=UpdateWorkItem(assignees=current_ids),
+        payload = _remap_work_item_fields(UpdateWorkItem(assignees=current_ids).model_dump(exclude_none=True))
+        response = client.work_items._patch(
+            f"{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            payload,
         )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def remove_work_item_assignee(project_id: str, work_item_id: str, user_id: str) -> WorkItem:
@@ -501,12 +518,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             workspace_slug=workspace_slug, project_id=project_id, work_item_id=work_item_id
         )
         current_ids = [u.id for u in (current.assignees or []) if u.id and u.id != user_id]
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=UpdateWorkItem(assignees=current_ids),
+        payload = _remap_work_item_fields(UpdateWorkItem(assignees=current_ids).model_dump(exclude_none=True))
+        response = client.work_items._patch(
+            f"{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            payload,
         )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def add_work_item_label(project_id: str, work_item_id: str, label_id: str) -> WorkItem:
@@ -531,12 +548,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         current_ids = [lb.id for lb in (current.labels or []) if lb.id]
         if label_id not in current_ids:
             current_ids.append(label_id)
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=UpdateWorkItem(labels=current_ids),
+        payload = _remap_work_item_fields(UpdateWorkItem(labels=current_ids).model_dump(exclude_none=True))
+        response = client.work_items._patch(
+            f"{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            payload,
         )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def remove_work_item_label(project_id: str, work_item_id: str, label_id: str) -> WorkItem:
@@ -559,12 +576,12 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             workspace_slug=workspace_slug, project_id=project_id, work_item_id=work_item_id
         )
         current_ids = [lb.id for lb in (current.labels or []) if lb.id and lb.id != label_id]
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=UpdateWorkItem(labels=current_ids),
+        payload = _remap_work_item_fields(UpdateWorkItem(labels=current_ids).model_dump(exclude_none=True))
+        response = client.work_items._patch(
+            f"{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            payload,
         )
+        return WorkItem.model_validate(response)
 
     @mcp.tool()
     def list_archived_work_items(
