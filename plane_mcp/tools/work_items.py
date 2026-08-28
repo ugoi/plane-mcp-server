@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 from fastmcp.utilities.logging import get_logger
 from plane.errors.errors import HttpError
 from plane.models.enums import PriorityEnum
-from plane.models.query_params import RetrieveQueryParams, WorkItemQueryParams
+from plane.models.query_params import PaginatedQueryParams, RetrieveQueryParams, WorkItemQueryParams
 from plane.models.work_items import (
     CreateWorkItem,
     PaginatedWorkItemResponse,
@@ -115,7 +115,9 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             raise
 
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
@@ -138,9 +140,14 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         """
         List work items across all projects with optional PQL filtering.
 
-        Spans every project the caller can view. 
+        Spans every project the caller can view.
         Use project= UUID in PQL to scope to one project.
         For single-project filtering use list_work_items instead.
+
+        Deployments without the workspace-wide API route fall back to the
+        project-scoped route when the workspace has exactly one project. For
+        multi-project workspaces, the result explains how to query each project
+        without pretending project cursors form one globally ordered page.
 
         Args:
             pql: PQL filter. See field description for syntax.
@@ -154,6 +161,8 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             total_count: True DB total, not page-bounded — use for counts.
             next_cursor: Cursor for the next page.
             prev_cursor: Cursor for the previous page.
+            compatibility_fallback: Present when a missing workspace route was
+                handled through the only project or an empty project list.
         """
         client, workspace_slug = get_plane_client_context()
 
@@ -168,13 +177,89 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             external_source=external_source,
         )
 
+        compatibility_fallback: str | None = None
         try:
             response: PaginatedWorkItemResponse = client.work_items.list_workspace(
                 workspace_slug=workspace_slug,
                 params=params,
             )
         except HttpError as e:
-            if pql and e.status_code == 400 and isinstance(e.response, dict) and "pql" in e.response:
+            if e.status_code == 404:
+                projects_response = client.projects.list(
+                    workspace_slug=workspace_slug,
+                    params=PaginatedQueryParams(per_page=2, fields="id,name,identifier"),
+                )
+                projects = projects_response.results or []
+
+                if projects_response.total_count == 0:
+                    return {
+                        "results": [],
+                        "total_count": 0,
+                        "count": 0,
+                        "next_cursor": "",
+                        "prev_cursor": "",
+                        "next_page_results": False,
+                        "prev_page_results": False,
+                        "compatibility_fallback": "no_projects",
+                    }
+
+                if projects_response.total_count > 1:
+                    project_preview = [
+                        {
+                            "id": getattr(project, "id", None),
+                            "name": getattr(project, "name", None),
+                            "identifier": getattr(project, "identifier", None),
+                        }
+                        for project in projects
+                    ]
+                    return {
+                        "error": (
+                            "This Plane deployment does not expose the workspace-wide work item list endpoint, "
+                            "and project-scoped endpoints cannot preserve global pagination across multiple projects."
+                        ),
+                        "unsupported_capability": "workspace_work_item_list",
+                        "project_count": projects_response.total_count,
+                        "projects": project_preview,
+                        "hint": "Call list_work_items separately for each project_id returned by list_projects.",
+                    }
+
+                if projects_response.total_count != 1 or len(projects) != 1 or not projects[0].id:
+                    return {
+                        "error": "Plane returned an inconsistent project list while selecting the fallback route.",
+                        "unsupported_capability": "workspace_work_item_list",
+                        "project_count": projects_response.total_count,
+                        "hint": "Call list_projects, then call list_work_items with a returned project_id.",
+                    }
+
+                try:
+                    response = client.work_items.list(
+                        workspace_slug=workspace_slug,
+                        project_id=projects[0].id,
+                        params=params,
+                    )
+                except HttpError as fallback_error:
+                    if (
+                        pql
+                        and fallback_error.status_code == 400
+                        and isinstance(fallback_error.response, dict)
+                        and "pql" in fallback_error.response
+                    ):
+                        logger.warning(
+                            "list_workspace_work_items: invalid PQL %r → %s",
+                            pql,
+                            fallback_error.response,
+                        )
+                        return {
+                            "error": fallback_error.response["pql"],
+                            "failed_pql": pql,
+                            "pql_reference": PQL_FULL_REFERENCE,
+                            "hint": (
+                                "The PQL above failed. Fix it using the reference and retry list_workspace_work_items."
+                            ),
+                        }
+                    raise
+                compatibility_fallback = "single_project"
+            elif pql and e.status_code == 400 and isinstance(e.response, dict) and "pql" in e.response:
                 logger.warning("list_workspace_work_items: invalid PQL %r → %s", pql, e.response)
                 return {
                     "error": e.response["pql"],
@@ -182,10 +267,13 @@ def register_work_item_tools(mcp: FastMCP) -> None:
                     "pql_reference": PQL_FULL_REFERENCE,
                     "hint": "The PQL above failed. Fix it using the reference and retry list_workspace_work_items.",
                 }
-            raise
+            else:
+                raise
 
-        return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+        result = {
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
@@ -193,6 +281,9 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             "next_page_results": response.next_page_results,
             "prev_page_results": response.prev_page_results,
         }
+        if compatibility_fallback:
+            result["compatibility_fallback"] = compatibility_fallback
+        return result
 
     @mcp.tool()
     def create_work_item(
@@ -639,7 +730,9 @@ def register_work_item_tools(mcp: FastMCP) -> None:
                 }
             raise
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
