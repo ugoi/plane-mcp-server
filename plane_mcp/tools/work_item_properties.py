@@ -194,9 +194,7 @@ def register_work_item_property_tools(mcp: FastMCP) -> None:
                 project_id=project_id,
                 data=data,
             )
-        return client.workspace_work_item_properties.create(
-            workspace_slug=workspace_slug, data=data
-        )
+        return client.workspace_work_item_properties.create(workspace_slug=workspace_slug, data=data)
 
     @mcp.tool()
     def retrieve_work_item_property(

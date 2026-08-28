@@ -293,7 +293,9 @@ def register_cycle_tools(mcp: FastMCP) -> None:
                 }
             raise
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,

@@ -87,7 +87,6 @@ def main() -> None:
         return
 
     if server_mode == ServerMode.HTTP:
-
         prefix = os.getenv("MCP_PATH_PREFIX") or ""
 
         oauth_mcp = get_oauth_mcp(prefix + "/http")

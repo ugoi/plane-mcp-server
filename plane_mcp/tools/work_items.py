@@ -22,6 +22,26 @@ from plane_mcp.tools.pql_reference import PQL_FIELD_HINT, PQL_FULL_REFERENCE
 
 logger = get_logger(__name__)
 
+ARCHIVED_PQL_FIELD_HINT = (
+    "PQL is unavailable for archived work-item listing on Plane CE v1.3.1. "
+    "Any non-empty value fails before a request is sent; use filters instead."
+)
+ARCHIVED_FILTERS_FIELD_HINT = (
+    "Optional Plane JSON structured filters using the server's allowlisted work-item fields, "
+    "operators, and nested and/or/not groups."
+)
+ARCHIVED_ORDER_BY_FIELD_HINT = (
+    "Optional ordering field, prefixed with '-' for descending. Allowed fields: archived_at, "
+    "completed_at, created_at, name, priority, sequence_id, sort_order, start_date, "
+    "state__group, state__name, target_date, updated_at. Defaults to -archived_at."
+)
+ARCHIVED_EXPAND_FIELD_HINT = "Optional comma-separated expansions: assignees,labels,state,type."
+ARCHIVED_FIELDS_FIELD_HINT = (
+    "Optional comma-separated sparse fieldset. Include archived_at and completed_at when those timestamps are needed."
+)
+PROJECT_ID_FIELD_HINT = "UUID of the Plane project."
+WORK_ITEM_ID_FIELD_HINT = "UUID of the Plane work item."
+
 
 def _patch_relations(
     client: Any,
@@ -115,7 +135,9 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             raise
 
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
@@ -138,7 +160,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         """
         List work items across all projects with optional PQL filtering.
 
-        Spans every project the caller can view. 
+        Spans every project the caller can view.
         Use project= UUID in PQL to scope to one project.
         For single-project filtering use list_work_items instead.
 
@@ -185,7 +207,9 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             raise
 
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
@@ -589,57 +613,70 @@ def register_work_item_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def list_archived_work_items(
-        project_id: str,
-        pql: Annotated[str | None, Field(description=PQL_FIELD_HINT)] = None,
-        order_by: str | None = None,
-        per_page: int | None = None,
-        cursor: str | None = None,
-        expand: str | None = None,
-        fields: str | None = None,
+        project_id: Annotated[str, Field(description=PROJECT_ID_FIELD_HINT)],
+        pql: Annotated[str | None, Field(description=ARCHIVED_PQL_FIELD_HINT)] = None,
+        order_by: Annotated[str | None, Field(description=ARCHIVED_ORDER_BY_FIELD_HINT)] = None,
+        per_page: Annotated[
+            int | None,
+            Field(ge=1, le=100, description="Archived work items per page; defaults to 100."),
+        ] = None,
+        cursor: Annotated[
+            str | None,
+            Field(description="Pagination cursor from the previous response's next_cursor or prev_cursor."),
+        ] = None,
+        expand: Annotated[str | None, Field(description=ARCHIVED_EXPAND_FIELD_HINT)] = None,
+        fields: Annotated[str | None, Field(description=ARCHIVED_FIELDS_FIELD_HINT)] = None,
+        filters: Annotated[dict[str, Any] | None, Field(description=ARCHIVED_FILTERS_FIELD_HINT)] = None,
     ) -> dict[str, Any]:
         """
-        List archived work items in a project with optional PQL filtering.
+        List archived work items in a project with JSON filtering and pagination.
 
         Args:
             project_id: UUID of the project
-            pql: PQL filter expression. Omit to list all archived items.
+            pql: Unsupported for this archived endpoint. A non-empty value is
+                rejected before any request; use filters instead.
+            filters: Plane JSON structured filters using the server's allowlisted
+                work-item fields, operators, and nested and/or/not groups.
             order_by: Field to sort by; prefix with `-` for descending
                 (default `-archived_at`).
             per_page: Results per page, 1-100 (default 100).
             cursor: Pagination cursor from a previous response's `next_cursor`.
-            expand: Comma-separated related fields to expand.
-            fields: Comma-separated sparse fieldset.
+            expand: Comma-separated related fields to expand; supported values
+                include assignees,labels,state,type.
+            fields: Comma-separated sparse fieldset, including archived_at and
+                completed_at when requested.
 
         Returns:
             Paginated envelope with results, total_count, next_cursor, prev_cursor.
+            A non-empty pql returns an archived_work_item_pql capability error
+            without contacting Plane.
         """
+        if pql and pql.strip():
+            return {
+                "error": "PQL is unavailable for archived work-item listing on Plane CE v1.3.1.",
+                "unsupported_capability": "archived_work_item_pql",
+                "failed_pql": pql,
+                "hint": "Use the filters parameter with Plane's supported JSON filter fields and operators.",
+            }
+
         client, workspace_slug = get_plane_client_context()
         params = WorkItemQueryParams(
-            pql=pql,
+            filters=filters,
             order_by=order_by,
             per_page=per_page,
             cursor=cursor,
             expand=expand,
             fields=fields,
         )
-        try:
-            response = client.work_items.list_archived(
-                workspace_slug=workspace_slug,
-                project_id=project_id,
-                params=params,
-            )
-        except HttpError as e:
-            if pql and e.status_code == 400 and isinstance(e.response, dict) and "pql" in e.response:
-                logger.warning("list_archived_work_items: invalid PQL %r → %s", pql, e.response)
-                return {
-                    "error": e.response["pql"],
-                    "failed_pql": pql,
-                    "pql_reference": PQL_FULL_REFERENCE,
-                    "hint": "The PQL above failed. Fix it using the reference and retry list_archived_work_items.",
-                }
-            raise
+        response = client.work_items.list_archived(
+            workspace_slug=workspace_slug,
+            project_id=project_id,
+            params=params,
+        )
         return {
-            "results": [item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])],
+            "results": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in (response.results or [])
+            ],
             "total_count": response.total_count,
             "count": response.count,
             "next_cursor": response.next_cursor,
@@ -649,12 +686,18 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    def archive_work_item(project_id: str, work_item_id: str) -> None:
+    def archive_work_item(
+        project_id: Annotated[str, Field(description=PROJECT_ID_FIELD_HINT)],
+        work_item_id: Annotated[str, Field(description=WORK_ITEM_ID_FIELD_HINT)],
+    ) -> None:
         """
         Archive a work item.
 
         Only work items in a completed or cancelled state can be archived.
         The work item will no longer appear in active work item lists.
+        This requires project member or admin permission. The mutation is
+        idempotent, preserves completed_at exactly, and returns HTTP 204 with
+        no response body.
 
         Args:
             project_id: UUID of the project
@@ -668,11 +711,17 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
-    def unarchive_work_item(project_id: str, work_item_id: str) -> None:
+    def unarchive_work_item(
+        project_id: Annotated[str, Field(description=PROJECT_ID_FIELD_HINT)],
+        work_item_id: Annotated[str, Field(description=WORK_ITEM_ID_FIELD_HINT)],
+    ) -> None:
         """
         Unarchive a work item.
 
         Restores an archived work item back to active status.
+        This requires project member or admin permission. The mutation is
+        idempotent, preserves completed_at exactly, and returns HTTP 204 with
+        no response body.
 
         Args:
             project_id: UUID of the project

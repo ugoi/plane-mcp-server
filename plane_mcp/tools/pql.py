@@ -2,10 +2,13 @@
 
 Relocates the Plane Query Language reference out of every list tool's schema
 (saved ~5,500 tokens per `tools/list` manifest call) and behind an on-demand
-tool. The 5 PQL-enabled list tools (`list_work_items`,
-`list_workspace_work_items`, `list_archived_work_items`,
-`list_cycle_work_items`, `list_module_work_items`) carry only a one-line hint
+tool. The 4 PQL-enabled list tools (`list_work_items`,
+`list_workspace_work_items`, `list_cycle_work_items`,
+`list_module_work_items`) carry only a one-line hint
 pointing to this tool; full syntax is fetched on demand.
+
+Archived work-item listing is deliberately excluded because Plane CE v1.3.1
+does not ship a PQL compiler for that public endpoint; it supports JSON filters.
 
 Note: the error-recovery payload on a failed PQL query still inlines
 `PQL_FULL_REFERENCE` so a single round-trip self-correction loop is preserved
@@ -26,8 +29,9 @@ def register_pql_tools(mcp: FastMCP) -> None:
         Return the Plane Query Language (PQL) syntax reference.
 
         Call this when composing the `pql` filter for `list_work_items`,
-        `list_workspace_work_items`, `list_archived_work_items`,
-        `list_cycle_work_items`, or `list_module_work_items`.
+        `list_workspace_work_items`, `list_cycle_work_items`, or
+        `list_module_work_items`. Archived work-item listing uses JSON filters,
+        not PQL.
 
         Args:
             detail: "full" (default) returns the comprehensive reference with

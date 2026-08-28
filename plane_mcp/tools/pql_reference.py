@@ -2,7 +2,7 @@
 # PQL_FIELD_HINT
 # ---------------------------------------------------------------------------
 # One-line schema hint embedded in Field(description=...) of the `pql`
-# parameter on the 5 PQL-enabled list tools. Keeps the manifest small.
+# parameter on the 4 PQL-enabled list tools. Keeps the manifest small.
 # The LLM should call get_pql_reference() for full syntax before composing
 # complex queries; the error-recovery payload also returns PQL_FULL_REFERENCE
 # inline so a failed query is still self-correctable in one round-trip.
@@ -260,15 +260,15 @@ cf["<property-uuid>"] IS NOT NULL
 
 **Operator matrix — pick operators matching the property's type:**
 
-| Property type   | Allowed operators                                              | Value shape                        |
-|-----------------|----------------------------------------------------------------|------------------------------------|
-| TEXT, URL       | =, !=, ~, IS NULL, IS NOT NULL, IS EMPTY, IS NOT EMPTY        | quoted string                      |
-| OPTION          | =, !=, IN, NOT IN, IS NULL, IS NOT NULL                        | option UUID (quoted)               |
-| RELATION        | =, !=, IN, NOT IN, IS NULL, IS NOT NULL                        | entity UUID (quoted)               |
-| DECIMAL         | =, !=, >, >=, <, <=, BETWEEN...AND..., IS NULL, IS NOT NULL   | bare number (never quoted)         |
-| DATETIME        | =, !=, >, >=, <, <=, BETWEEN...AND..., IS NULL, IS NOT NULL   | quoted "YYYY-MM-DD" or date fn     |
-| BOOLEAN         | =, IS NULL, IS NOT NULL                                        | bare true / false (never quoted)   |
-| EMAIL, FILE, FORMULA | — omit this condition entirely —                          | not filterable                     |
+| Property type | Allowed operators | Value shape |
+|---|---|---|
+| TEXT, URL | =, !=, ~, IS NULL, IS NOT NULL, IS EMPTY, IS NOT EMPTY | quoted string |
+| OPTION | =, !=, IN, NOT IN, IS NULL, IS NOT NULL | option UUID (quoted) |
+| RELATION | =, !=, IN, NOT IN, IS NULL, IS NOT NULL | entity UUID (quoted) |
+| DECIMAL | =, !=, >, >=, <, <=, BETWEEN...AND..., IS NULL, IS NOT NULL | bare number (never quoted) |
+| DATETIME | =, !=, >, >=, <, <=, BETWEEN...AND..., IS NULL, IS NOT NULL | quoted "YYYY-MM-DD" or date fn |
+| BOOLEAN | =, IS NULL, IS NOT NULL | bare true / false (never quoted) |
+| EMAIL, FILE, FORMULA | — omit this condition entirely — | not filterable |
 
 **Value typing rules:**
 - OPTION: use the option's UUID, NEVER its display name

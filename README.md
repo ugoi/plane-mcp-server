@@ -157,7 +157,23 @@ The server provides comprehensive tools for interacting with Plane. All tools us
 | `retrieve_work_item_by_identifier` | Retrieve a work item by project identifier and issue sequence number |
 | `update_work_item` | Update a work item with partial data |
 | `delete_work_item` | Delete a work item by ID |
+| `list_archived_work_items` | List archived work items with pagination, JSON filters, sparse fields, expansion, and ordering |
+| `archive_work_item` | Archive a completed or cancelled work item |
+| `unarchive_work_item` | Restore an archived work item |
 | `search_work_items` | Search work items across a workspace with query string |
+
+The archive tools use Plane's authenticated public API. Archived listing never
+falls back to the active work-item list and returns the normal pagination
+envelope. It supports `cursor`, `per_page`, `order_by`, `fields`,
+`expand=assignees,labels,state,type`, and Plane's allowlisted JSON `filters`.
+Plane CE v1.3.1 has no PQL compiler for this endpoint, so a non-empty `pql`
+returns an `archived_work_item_pql` capability error before any network request;
+use `filters` instead.
+
+Archive uses the canonical `POST .../archive/` route and unarchive uses
+`DELETE .../unarchive/`. Both mutations require a project member or admin,
+are idempotent on HTTP 204, and preserve `completed_at`. `archived_at` is
+read-only on generic work-item updates; use these dedicated tools instead.
 
 ### Cycles
 
@@ -405,4 +421,3 @@ If you were using the previous Node.js-based `@makeplane/plane-mcp-server`, your
 ```
 
 **Please migrate to the new Python-based configuration shown in the Usage section above.**
-
